@@ -176,7 +176,7 @@ function RedisSentinelClient(options) {
         self.emit('failover-start');
         break;
 
-      case '+failover-end':
+      case '+switch-master':
         self.debug('Reconnect triggered by ' + msg);
         self.emit('failover-end');
         self.reconnect();
