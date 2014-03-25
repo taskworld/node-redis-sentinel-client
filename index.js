@@ -80,6 +80,10 @@ function RedisSentinelClient(options) {
     self.emit('message', channel, message);
   });
 
+  // pass up pmessage
+  self.activeMasterClient.on('pmessage', function(pattern, channel, message){
+    self.emit('pmessage', pattern, channel, message);
+  });
 
   // pass these through
   ['unsubscribe','end', 'reconnecting'].forEach(function(staticProp){
