@@ -165,7 +165,7 @@ suite('RedisSentinelClient', function(){
     // (nesting suites for easier-to-read results,
     //  and for flow control)
     suite('single', function(){
-      var key = 'test_single'
+      var key = 'test_single',
           num = "9007199254740992";
 
       test('should set', function(done){
@@ -257,6 +257,36 @@ suite('RedisSentinelClient', function(){
         });
       });
 
+    });
+
+    suite('pubsub', function() {
+      var client2 = RedisSentinel.createClient(PORT, HOST, {
+        logger: new MockLogger(),
+          debug: false
+      });
+
+      test('should get pubsub messages', function(done){
+        client2.on('message', function(channel, message) {
+          should.strictEqual(message, '123');
+          should.strictEqual(channel, 'pubsub');
+          done();
+        });
+
+        client2.subscribe('pubsub');
+        client.publish('pubsub', '123');
+      });
+
+      test('should get pmessages', function(done){
+        client2.on('pmessage', function(pattern, channel, message) {
+          should.strictEqual(message, 'abc');
+          should.strictEqual(channel, 'channel1');
+          should.strictEqual(pattern, 'channel*');
+          done();
+        });
+
+        client2.psubscribe('channel*');
+        client.publish('channel1', 'abc');
+      });
     });
 
 
