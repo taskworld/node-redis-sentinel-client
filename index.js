@@ -144,6 +144,7 @@ function RedisSentinelClient(options) {
   });
 
   var sentinelListener = new RedisSingleClient.createClient(options.port, options.host);
+  this.sentinelListener = sentinelListener;
   sentinelListener.on('connect', function(){
     self.debug('connected to sentinel listener');
   });
@@ -320,6 +321,16 @@ RedisSentinelClient.prototype.MULTI = function (args) {
 RedisSentinelClient.prototype.getMaster = function getMaster() {
   return this.activeMasterClient;
 };
+
+// commands that must be passed through to the sentinel Redises as well as the active master
+[ 'quit', 'end', 'unref' ].forEach(function(staticProp) {
+  RedisSentinelClient.prototype[staticProp] =
+  RedisSentinelClient.prototype[staticProp.toUpperCase()] = function(){
+    this.sentinelTalker[staticProp].apply(this.sentinelTalker, arguments);
+    this.sentinelListener[staticProp].apply(this.sentinelListener, arguments);
+    return this.activeMasterClient[staticProp].apply(this.activeMasterClient, arguments);
+  };
+});
 
 
 // get static values from client, also pass-thru
