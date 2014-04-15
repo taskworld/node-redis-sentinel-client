@@ -240,6 +240,7 @@ RedisSentinelClient.prototype.reconnect = function reconnect(onReconnectCallback
 
     // reconnect it.
     // (if using auth, should re-auth automatically too.)
+    self.activeMasterClient.stream = null;
     self.activeMasterClient.forceReconnectionAttempt();
 
 
