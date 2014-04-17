@@ -21,7 +21,7 @@ var should = require('should'),
 
 
 suite('sentinel failover', function(){
-  
+
   // (want setup to run once, using BDD-style `before`)
   before( function(done){
     console.log('SETUP')
@@ -59,17 +59,17 @@ suite('sentinel failover', function(){
       try {
         _suite.sentinelClient.on(eventName, function() {
           _suite.eventLog.push(eventName);
-          
+
           var msg = 'sentinel client ' +
             (_suite.sentinelClient.server_info ? _suite.sentinelClient.server_info.role : '[no role]') + ' ' +
             (_suite.sentinelClient.server_info ? _suite.sentinelClient.server_info.tcp_port : '[no port]') + ' ' +
             'got ' + eventName;
-          
+
           console.log(msg, util.inspect(arguments,false,0))
         })
       } catch (e) {
         console.error("can't listen to " + eventName);
-      }      
+      }
     });
 
 
@@ -89,18 +89,18 @@ suite('sentinel failover', function(){
 
     this.doAtomicIO = function doAtomicIO(ioCount) {
       console.log("-- set", ioCount)
-      
+
       var n = ioCount.toString(),
         client = _suite.sentinelClient
-      
+
       client.hset(_suite.hashKey, n, n, function(error) {
         if (error) return _suite.emitError(error)
-        
+
         client.hget(_suite.hashKey, n, function(error, val) {
           if (error) return _suite.emitError(error)
 
           console.log("---- get " + n, (val === n).toString());
-          
+
           client.hgetall(_suite.hashKey, function(error, hash) {
             if (error) return _suite.emitError(error);
 
@@ -195,7 +195,7 @@ suite('sentinel failover', function(){
 
       should.exist(pids.master.length)
       pids.master.length.should.equal(1)
-  
+
       should.exist(pids.slave.length)
       pids.slave.length.should.equal(1)
 
@@ -370,8 +370,8 @@ suite('sentinel failover', function(){
       this.events.on('message', function(message){
         // wait for last,
         // make sure none earlier missing
-        if (+message >= _suite.ioCount && !_done) {          
-          should.equal( _suite.checkIntegrity( _suite.receivedPubs, _suite.ioCount ).length, 0, "no pub/sub data missing")          
+        if (+message >= _suite.ioCount && !_done) {
+          should.equal( _suite.checkIntegrity( _suite.receivedPubs, _suite.ioCount ).length, 0, "no pub/sub data missing")
           _done = true
           done()
         }
