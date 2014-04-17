@@ -72,7 +72,7 @@ function RedisSentinelClient(options) {
   - sentinel listener gets:
     +sdown
     +odown
-    +failover-triggered
+    +try-failover
     +failover-state-wait-start
     +failover-state-select-slave
     +selected-slave
@@ -143,7 +143,7 @@ function RedisSentinelClient(options) {
         self.emit('down-start');
         break;
 
-      case '+failover-triggered':
+      case '+try-failover':
         self.debug('Failover detected');
         self.emit('failover-start');
         break;
@@ -284,6 +284,10 @@ RedisSentinelClient.prototype.getMaster = function getMaster() {
   return this.activeMasterClient;
 };
 
+RedisSentinelClient.prototype.getSentinel = function () {
+  return this.sentinelTalker
+};
+
 // commands that must be passed through to the sentinel Redises as well as the active master
 [ 'quit', 'end', 'unref' ].forEach(function(staticProp) {
   RedisSentinelClient.prototype[staticProp] =
@@ -302,7 +306,7 @@ RedisSentinelClient.prototype.getMaster = function getMaster() {
   'stream' /* ?? */
   ].forEach(function(staticProp){
     RedisSentinelClient.prototype.__defineGetter__(staticProp, function(){
-      if (this.activeMasterClient !== null) {
+      if (this.activeMasterClient) {
         return this.activeMasterClient[staticProp];
       } else {
         return null;

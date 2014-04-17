@@ -259,52 +259,12 @@ suite('sentinel failover', function(){
     })
 
 
-    test('kill master', function(done){
+    test('manual failover', function(done){
       this.timeout(30000)
 
-      this.ignoreErrors = true;
-
-      if (!this.pids || !this.pids.master || isNaN(this.pids.master[0].pid)) {
-        return done(new Error("Missing master PID from setup"))
-      }
-
-      console.warn("*** FAILOVER CAN TAKE A WHILE, DON'T QUIT TOO SOON ***");
-
-      var masterPid = this.pids.master[0].pid
-      console.log("Killing master pid", masterPid)
-
-      async.series({
-        killMaster: function(next){
-          child_process.exec("kill " + masterPid, function(error, stdout, stderr) {
-            if (error) return next(error)
-            else if (stderr.trim() !== '') return next(new Error(stderr.trim()))
-            else next()
-          })
-        },
-        wait: function(next){
-          // 1s buffer to make sure
-          setTimeout(next, 1000)
-        },
-        confirm: function(next){
-          pidHelpers.findPid(['redis-server', '*:5379'], function(error, pids){
-            if (error) return next(error)
-            // console.log('new pids', pids)
-            should.equal(pids.length, 0, 'master pid gone')
-
-            console.log("... should failover now!")
-            next()
-          })
-        }
-      }, function(error){
-        ///if(error){ console.log('--- got error', error) }
-        done(error)
+      this.sentinelClient.getSentinel().send_command('sentinel', ['failover', 'mymaster'], function (err, ret) {
+        done(err)
       })
-
-    })
-
-    test('should get \'down-start\'', function(done){
-      this.timeout(5000)
-      this.waitForEvent('down-start', done)
     })
 
 
