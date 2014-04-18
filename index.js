@@ -36,8 +36,6 @@ function RedisSentinelClient(options) {
 
   this.options.masterName = this.options.masterName || 'mymaster';
 
-  self.emitMasterErrors = false;
-
   // no socket support for now (b/c need multiple connections).
   if (options.port == null || options.host == null) {
     throw new Error("Sentinel client needs a host and port");
@@ -46,11 +44,11 @@ function RedisSentinelClient(options) {
 
   // if debugging is enabled for sentinel client, enable master client's too.
   // (standard client just uses console.log, not the 'logger' passed here.)
-  if (options.debug) {
+  if (options.master_debug) {
     RedisSingleClient.debug_mode = true;
   }
 
-  var masterOptions = options.masterOptions || {};
+  var masterOptions = self.masterOptions = options.masterOptions || {};
   masterOptions.disable_flush = true; // Disables flush_and_error, to preserve queue
 
   // if master & slaves need a password to authenticate,
@@ -59,44 +57,14 @@ function RedisSentinelClient(options) {
   // but differentiating b/c we're not authenticating to the *sentinel*, rather to the master/slaves.)
   // by setting it to 'auth_pass' on master client, it should authenticate to the master (& slaves on failover).
   // note, sentinel daemon's conf needs to know this same password too/separately.
-  masterOptions.auth_pass = options.master_auth_pass || null;
-
-  // this client will always be connected to the active master.
-  // using 9999 as initial; expected to fail; is replaced & re-connected to real port later.
-  self.activeMasterClient = new RedisSingleClient.createClient(9999, '127.0.0.1', masterOptions);
-
-  
-  // pass up errors
-  // @todo emit a separate 'master error' event?
-  self.activeMasterClient.on('error', function(error){
-    if (self.emitMasterErrors) {
-      error.message = self.myName + " master error: " + error.message;
-      self.onError.call(self, error);
-    }
-  });
-
-  // pass up messages
-  self.activeMasterClient.on('message', function(channel, message){
-    self.emit('message', channel, message);
-  });
-
-  // pass up pmessage
-  self.activeMasterClient.on('pmessage', function(pattern, channel, message){
-    self.emit('pmessage', pattern, channel, message);
-  });
-
-  // pass these through
-  ['unsubscribe','end', 'reconnecting'].forEach(function(staticProp){
-    // @todo rewrite this to use `apply`
-    self.activeMasterClient.on(staticProp, function(a, b, c, d){
-      self.emit(staticProp, a, b, c, d);
-    });
-  });
-
+  masterOptions.auth_pass = options.master_auth_pass || masterOptions.auth_pass;
 
   // used for logging & errors
   this.myName = 'sentinel-' + this.options.host + ':' + this.options.port + '-' + this.options.masterName;
 
+  this.on('error', function (err) {
+    this.log('redis master error: ', err)
+  })
 
   /*
   what a failover looks like:
@@ -104,7 +72,7 @@ function RedisSentinelClient(options) {
   - sentinel listener gets:
     +sdown
     +odown
-    +failover-triggered
+    +try-failover
     +failover-state-wait-start
     +failover-state-select-slave
     +selected-slave
@@ -173,10 +141,9 @@ function RedisSentinelClient(options) {
       case '+sdown':
         self.debug('Down detected');
         self.emit('down-start');
-        self.emitMasterErrors = false;
         break;
 
-      case '+failover-triggered':
+      case '+try-failover':
         self.debug('Failover detected');
         self.emit('failover-start');
         break;
@@ -198,7 +165,7 @@ util.inherits(RedisSentinelClient, events.EventEmitter);
 // destroys the previous connection and replaces w/ a new one,
 // (transparently to the user)
 // but only if host+port have changed.
-RedisSentinelClient.prototype.reconnect = function reconnect(onReconnectCallback) {
+RedisSentinelClient.prototype.reconnect = function reconnect() {
   var self = this;
   self.debug('reconnecting');
 
@@ -225,48 +192,43 @@ RedisSentinelClient.prototype.reconnect = function reconnect(onReconnectCallback
         newMaster.host === self.activeMasterClient.host &&
         newMaster.port === self.activeMasterClient.port) {
       self.debug('Master has not changed, nothing to do');
-      if (typeof onReconnectCallback === 'function') onReconnectCallback();
       return;
     }
 
-    
-    self.debug("Changing master from " + 
-      (self.activeMasterClient ? self.activeMasterClient.host + ":" + self.activeMasterClient.port : "[none]") + 
+
+    self.debug("Changing master from " +
+      (self.activeMasterClient ? self.activeMasterClient.host + ":" + self.activeMasterClient.port : "[none]") +
       " to " + newMaster.host + ":" + newMaster.port);
 
-    // reconfigure it
-    self.activeMasterClient.host = newMaster.host;
-    self.activeMasterClient.port = newMaster.port;
-
-    // reconnect it.
-    // (if using auth, should re-auth automatically too.)
-    self.activeMasterClient.forceReconnectionAttempt();
-
-
-
-    // @todo use no_ready_check = true? then change this 'ready' to 'connect'
-
-    // backwards-compat. w/RedisClient
-    self.activeMasterClient.on('connect', function(){
-      self.emit('connect');
-      self.emitMasterErrors = true;
-    });
-
-    self.activeMasterClient.once('ready', function(){
-      self.debug('New master is ready');
-      // anything outside holding a ref to activeMasterClient needs to listen to this,
-      // and refresh its reference. pass the new master so it's easier.
-      self.emit('reconnected', self.activeMasterClient);
-
-      // backwards-compat. w/RedisClient
-      self.emit('ready');
-
-      if (typeof onReconnectCallback === 'function') onReconnectCallback();
-    });
-
+    self._connect(newMaster.port, newMaster.host);
   });
 };
 
+RedisSentinelClient.prototype._connect = function (port, host) {
+  var self = this
+
+  // this client will always be connected to the active master.
+  // using 9999 as initial; expected to fail; is replaced & re-connected to real port later.
+  var thisClient = self.activeMasterClient = new RedisSingleClient.createClient(port, host, self.masterOptions);
+
+  // pass up messages
+  ['message', 'pmessage', 'unsubscribe', 'end', 'reconnecting', 'connect', 'ready', 'error'].forEach(function (evt) {
+    self.activeMasterClient.on(evt, function () {
+      if (self.activeMasterClient == thisClient)
+        self.emit.apply(self, [evt].concat(Array.prototype.slice.call(arguments)))
+    })
+  })
+
+  // @todo use no_ready_check = true? then change this 'ready' to 'connect'
+
+  self.once(self.masterOptions.no_ready_check ? 'connect' : 'ready', function(){
+    self.debug('New master is ready');
+    // anything outside holding a ref to activeMasterClient needs to listen to this,
+    // and refresh its reference. pass the new master so it's easier.
+    self.emit('reconnected', self.activeMasterClient);
+  });
+
+};
 
 //
 // pass thru all client commands from RedisSentinelClient to activeMasterClient
@@ -322,6 +284,10 @@ RedisSentinelClient.prototype.getMaster = function getMaster() {
   return this.activeMasterClient;
 };
 
+RedisSentinelClient.prototype.getSentinel = function () {
+  return this.sentinelTalker
+};
+
 // commands that must be passed through to the sentinel Redises as well as the active master
 [ 'quit', 'end', 'unref' ].forEach(function(staticProp) {
   RedisSentinelClient.prototype[staticProp] =
@@ -340,8 +306,8 @@ RedisSentinelClient.prototype.getMaster = function getMaster() {
   'stream' /* ?? */
   ].forEach(function(staticProp){
     RedisSentinelClient.prototype.__defineGetter__(staticProp, function(){
-      if (this.activeMasterClient !== null) {
-        return this.activeMasterClient[staticProp]; 
+      if (this.activeMasterClient) {
+        return this.activeMasterClient[staticProp];
       } else {
         return null;
       }
@@ -369,13 +335,6 @@ RedisSentinelClient.prototype.debug = function debug() {
   }
 };
 
-
-RedisSentinelClient.prototype.onError = function(error) {
-  // redundant? debug instead?
-  this.log('error', error);
-
-  this.emit('error', error);
-};
 
 exports.RedisSentinelClient = RedisSentinelClient;
 

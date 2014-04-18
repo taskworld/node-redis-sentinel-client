@@ -26,7 +26,7 @@ suite('RedisSentinelClient', function(){
     });
 
     var logger = new MockLogger();
-    // logger.toConsole = true;
+    logger.toConsole = true;
 
     var client = RedisSentinel.createClient(PORT, HOST, {
       logger: logger,
@@ -49,10 +49,12 @@ suite('RedisSentinelClient', function(){
         done();
       }, 2000);
 
-      client.on('reconnected', function(){
+      client.ready ? calldone() : client.on('ready', calldone)
+
+      function calldone(){
         clearTimeout(timeout);
         done();
-      });
+      }
     });
 
     test('should handle external logger', function(){
