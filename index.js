@@ -8,7 +8,7 @@ var RedisSingleClient = require('redis'),
     util = require('util'),
     reply_to_object = require('redis/lib/util.js').reply_to_object,
     to_array = require('redis/lib/to_array.js'),
-    commands = RedisSingleClient.commands,
+    commands = require('redis/lib/commands'),
     debug = require('debug')('redis-sentinel-client');
 
 
@@ -235,13 +235,31 @@ RedisSentinelClient.prototype.reconnect = function reconnect() {
 
 RedisSentinelClient.prototype._connect = function (port, host) {
   var self = this
+    , old_state = {}, subscription_set = {}
+
+  if (self.activeMasterClient) {
+    if (self.activeMasterClient.old_state) {
+      old_state = self.activeMasterClient.old_state
+    } else {
+      old_state.pub_sub_mode = self.activeMasterClient.pub_sub_mode || false
+      old_state.monitoring = self.activeMasterClient.monitoring || false
+      old_state.selected_db = self.activeMasterClient.selected_db || 0
+    }
+    subscription_set = self.activeMasterClient && self.activeMasterClient.subscription_set || {}
+  }
 
   // this client will always be connected to the active master.
-  // using 9999 as initial; expected to fail; is replaced & re-connected to real port later.
   var thisClient = self.activeMasterClient = new RedisSingleClient.createClient(port, host, self.masterOptions);
 
+  // This hack will make it seem like the redis client has to reset its subscriptions from an old state
+  // so if we were reconnecting a client in pub_sub_mode, redis will do the hard work for us!
+  self.activeMasterClient.old_state = old_state;
+  self.activeMasterClient.subscription_set = subscription_set;
+
+  debug('Setting old_state on new activeMasterClient from old: ' + JSON.stringify(old_state));
+
   // pass up messages
-  ['message', 'pmessage', 'unsubscribe', 'end', 'reconnecting', 'connect', 'ready', 'error', 'subscribe'].forEach(function (evt) {
+  ;['message', 'pmessage', 'unsubscribe', 'end', 'reconnecting', 'connect', 'ready', 'error', 'subscribe'].forEach(function (evt) {
     self.activeMasterClient.on(evt, function () {
       if (self.activeMasterClient == thisClient)
         self.emit.apply(self, [evt].concat(Array.prototype.slice.call(arguments)))
@@ -251,7 +269,7 @@ RedisSentinelClient.prototype._connect = function (port, host) {
   // @todo use no_ready_check = true? then change this 'ready' to 'connect'
 
   self.once(self.masterOptions.no_ready_check ? 'connect' : 'ready', function(){
-    debug('New master is ready');
+    debug('New master is ready (pub_sub_mode: ' + self.pub_sub_mode + ')');
     // anything outside holding a ref to activeMasterClient needs to listen to this,
     // and refresh its reference. pass the new master so it's easier.
     self.emit('reconnected', self.activeMasterClient);
@@ -331,7 +349,7 @@ RedisSentinelClient.prototype.getSentinel = function () {
 };
 
 // commands that must be passed through to the sentinel Redises as well as the active master
-[ 'quit', 'end', 'unref' ].forEach(function(staticProp) {
+;[ 'quit', 'end', 'unref' ].forEach(function(staticProp) {
   RedisSentinelClient.prototype[staticProp] =
   RedisSentinelClient.prototype[staticProp.toUpperCase()] = function(){
     this.sentinelTalker[staticProp].apply(this.sentinelTalker, arguments);
@@ -343,8 +361,8 @@ RedisSentinelClient.prototype.getSentinel = function () {
 
 // get static values from client, also pass-thru
 // not all of them... @review!
-[ 'connection_id', 'ready', 'connected', 'connections', 'commands_sent', 'connect_timeout',
-  'monitoring', 'closing', 'server_info',
+;[ 'connection_id', 'ready', 'connected', 'connections', 'commands_sent', 'connect_timeout',
+  'monitoring', 'closing', 'server_info', 'pub_sub_mode', 'subscription_set',
   'stream' /* ?? */
   ].forEach(function(staticProp){
     RedisSentinelClient.prototype.__defineGetter__(staticProp, function(){

@@ -56,7 +56,7 @@ suite('sentinel full', function () {
       done()
     }
 
-    _suite.createSentinelClient = function () {
+    _suite.createSentinelClient = function (dbg) {
       return RedisSentinel.createClient({
         sentinels: [
           ['127.0.0.1', 8379],
@@ -64,8 +64,13 @@ suite('sentinel full', function () {
         ],
         masterName: 'testmaster',
         master_auth_pass: password,
+        master_debug: dbg
       }).on('error', function (err) {
-        debug('error', err)
+        if (err.name == 'AssertionError') {
+          throw err
+        } else {
+          debug('ERROR', err)
+        }
       })
     }
 
@@ -141,13 +146,17 @@ suite('sentinel full', function () {
 
     var done2 = donen(2, done)
 
-    sub.on('ready', function () {
-      console.log('sub ready')
+    sub.once('ready', function () {
       sub.on('subscribe', function () { done2() })
       sub.subscribe(_suite.key('counter'))
+
+      // Test the subscriber is back in subscriber mode every time ready is called
+      sub.on('ready', function () {
+        assert.ok(sub.pub_sub_mode)
+        assert.ok(Object.keys(sub.subscription_set).length > 0)
+      })
     })
-    pub.on('ready', function () {
-      console.log('pub ready')
+    pub.once('ready', function () {
       done2()
     })
   })
@@ -210,7 +219,15 @@ suite('sentinel full', function () {
   test('kill master', function (done) {
     this.timeout(30000)
     setTimeout(onTimeout, 4000)
-    _suite.clients.sentinelClient.once('switch master', done)
+
+    var done4 = donen(4, done)
+    _suite.clients.sentinelClient.once('switch master', done4).once('ready', done4)
+    _suite.clients.sentinelPub.once('ready', done4)
+    _suite.clients.sentinelSub.once('ready', function () {
+      assert.ok(sub.pub_sub_mode)
+      assert.ok(Object.keys(sub.subscription_set).length > 0)
+      done4()
+    })
 
     function onTimeout() {
       _suite.clients.redis2.end()
@@ -229,6 +246,41 @@ suite('sentinel full', function () {
       done()
     })
   })
+
+  test('start slave back', function (done) {
+    this.timeout(10000)
+    _suite.processes.redis2 = start.redis('./test/redis2.conf', ports.redis2, ports.redis1, password)
+    setTimeout(function () {
+      _suite.clients.redis2 = RedisClient.createClient(ports.redis2,null,{auth_pass:password}).on('ready', done)
+    }, 5000)
+  })
+
+  test('use sentinel client after master kill', testSentinelClient)
+
+  test('kill other master', function (done) {
+    this.timeout(30000)
+    setTimeout(onTimeout, 4000)
+    _suite.clients.sentinelClient.once('switch master', done)
+
+    function onTimeout() {
+      _suite.clients.redis1.end()
+      _suite.processes.redis1.kill()
+      delete(_suite.clients.redis1)
+      delete(_suite.processes.redis1)
+
+      debug('redis master killed')
+    }
+  })
+
+  test('who is master', function (done) {
+    _suite.clients.sentinelClient.sentinel(['get-master-addr-by-name', 'testmaster'], function (err, bulk) {
+      assert.ifError(err)
+      assert.equal(bulk[1], ports.redis2)
+      done()
+    })
+  })
+
+  test('use sentinel client after second master kill', testSentinelClient)
 
   test('kill sentinel1', function (done) {
     this.timeout(10000)
@@ -258,7 +310,7 @@ suite('sentinel full', function () {
 
     cli.sentinel(['get-master-addr-by-name', 'testmaster'], function (err, bulk) {
       assert.ifError(err)
-      assert.equal(bulk[1], ports.redis1)
+      assert.equal(bulk[1], ports.redis2)
       done()
     })
   })
@@ -330,6 +382,7 @@ function testHmGetSet(cli, key, cb) {
 function testPubSub(pub, sub, cb) {
   var val = Date.now()
   sub.once('message', function (chan, sval) {
+    debug('pub sub message received!')
     assert.equal(chan, _suite.key('counter'))
     assert.equal(sval, val)
     cb()
