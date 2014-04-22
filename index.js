@@ -235,28 +235,26 @@ RedisSentinelClient.prototype.reconnect = function reconnect() {
 
 RedisSentinelClient.prototype._connect = function (port, host) {
   var self = this
-    , old_state = {}, subscription_set = {}
 
-  if (self.activeMasterClient) {
-    if (self.activeMasterClient.old_state) {
-      old_state = self.activeMasterClient.old_state
-    } else {
-      old_state.pub_sub_mode = self.activeMasterClient.pub_sub_mode || false
-      old_state.monitoring = self.activeMasterClient.monitoring || false
-      old_state.selected_db = self.activeMasterClient.selected_db || 0
-    }
-    subscription_set = self.activeMasterClient && self.activeMasterClient.subscription_set || {}
-  }
-
-  // this client will always be connected to the active master.
-  var thisClient = self.activeMasterClient = new RedisSingleClient.createClient(port, host, self.masterOptions);
+    // this client will always be connected to the active master.
+    , thisClient = new RedisSingleClient.createClient(port, host, self.masterOptions);
 
   // This hack will make it seem like the redis client has to reset its subscriptions from an old state
   // so if we were reconnecting a client in pub_sub_mode, redis will do the hard work for us!
-  self.activeMasterClient.old_state = old_state;
-  self.activeMasterClient.subscription_set = subscription_set;
+  if (self.activeMasterClient) {
+    if (self.activeMasterClient.old_state) {
+      thisClient.old_state = self.activeMasterClient.old_state
+    } else {
+      thisClient.old_state = {
+        pub_sub_mode: self.activeMasterClient.pub_sub_mode || false,
+        monitoring: self.activeMasterClient.monitoring || false,
+        selected_db: self.activeMasterClient.selected_db || null,
+      }
+    }
+    thisClient.subscription_set = self.activeMasterClient && self.activeMasterClient.subscription_set || {}
+  }
 
-  debug('Setting old_state on new activeMasterClient from old: ' + JSON.stringify(old_state));
+  self.activeMasterClient = thisClient;
 
   // pass up messages
   ;['message', 'pmessage', 'unsubscribe', 'end', 'reconnecting', 'connect', 'ready', 'error', 'subscribe'].forEach(function (evt) {
