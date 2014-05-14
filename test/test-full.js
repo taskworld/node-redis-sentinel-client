@@ -137,7 +137,10 @@ suite('sentinel full', function () {
     cli.on('error', function (err) {
       console.log('Error in sentinel client:', err)
     })
-    cli.once('ready', done)
+    cli.once('ready', function (err) {
+      done(err)
+      startContinuity(cli)
+    })
   })
 
   test('setup sentinel pubsub', function (done) {
@@ -217,8 +220,8 @@ suite('sentinel full', function () {
   })
 
   test('kill master', function (done) {
-    this.timeout(30000)
-    setTimeout(onTimeout, 4000)
+    this.timeout(40000)
+    setTimeout(onTimeout, 10000)
 
     var done4 = donen(4, done)
     _suite.clients.sentinelClient.once('switch master', done4).once('ready', done4)
@@ -315,6 +318,10 @@ suite('sentinel full', function () {
     })
   })
 
+  test('test continuity through whole test', function (done) {
+    testContinuity(_suite.clients.sentinelClient, done)
+  })
+
   after(function (done) {
     Object.keys(_suite.clients).forEach(function (cli) { _suite.clients[cli].end() })
     Object.keys(_suite.processes).forEach(function (proc) { _suite.processes[proc].kill() })
@@ -388,4 +395,30 @@ function testPubSub(pub, sub, cb) {
     cb()
   })
   pub.publish(_suite.key('counter'), val, assert.ifError)
+}
+
+function startContinuity(cli) {
+  var key = _suite.key('continuity')
+    , i = 1
+  setInterval(function () {
+    var j = i++
+    cli.rpush(key, j, function (err) {
+      if (err) {
+        debug('Error on continuity! ' + j + ': ' + err)
+        i--
+      } else {
+        debug('Sent continuity ' + j)
+      }
+    })
+  }, 300)
+}
+
+function testContinuity(cli, cb) {
+  cli.lrange(_suite.key('continuity'), 0, -1, function (err, data) {
+    debug('continuity received ' + JSON.stringify(data))
+    assert.ifError(err)
+    assert.ok(data.length > 0)
+    assert.deepEqual(data, Array.apply(null, Array(data.length)).map(function (_,i) { return ''+(i+1) }))
+    cb()
+  })
 }
