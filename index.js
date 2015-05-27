@@ -18,6 +18,7 @@ options includes:
 - masterName
 - logger (e.g. winston)
 - debug (boolean)
+- failOverCb
 */
 function RedisSentinelClient(options) {
 
@@ -175,6 +176,9 @@ function RedisSentinelClient(options) {
       case '+failover-triggered':
         self.debug('Failover detected');
         self.emit('failover-start');
+        if (typeof self.options.failOverCb === 'function') {
+            self.options.failOverCb();
+        }
         break;
 
       case '+failover-end':
