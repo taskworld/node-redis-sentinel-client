@@ -40,14 +40,14 @@ See related thread about different approaches to Sentinel support: https://githu
 ```
 var RedisSentinel = require('redis-sentinel-client');
 var sentinelClient = RedisSentinel.createClient(options);
-// or
-var sentinelClient = RedisSentinel.createClient(PORT, HOST [, options]);
 ```
 
 Now use `sentinelClient` as a regular client: `set`, `get`, `hmset`, etc.
 
 ## Instantiation options
 
+- `RedisSingleClient` (required): The library `node_redis` that is used in your project.
+- `RedisCommands` (required): The commands of `node_redis` (It should be installed as dependency of `node_redis`).
 - Sentinel Connection Options (1 required):
     - `host` and `port`: Connect to a single sentinel
     - `sentinels`: Keep a list of all sentinels in the cluster so that if one disconnects, we rotate to another (Alternative to `port` and `host`): `sentinels: [[host1,port1],[host2,port2]]`
