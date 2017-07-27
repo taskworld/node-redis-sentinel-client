@@ -432,9 +432,7 @@ function createCustomRedisSentinel (_options) {
 
     return new RedisSentinelClient(options);
   };
-  return {
-    createClient: () => internals.createClient(_options)
-  }
+  return internals.createClient(_options)
 }
 
 exports.createCustomRedisSentinel = createCustomRedisSentinel
