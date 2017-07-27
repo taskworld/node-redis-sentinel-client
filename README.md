@@ -46,8 +46,8 @@ Now use `sentinelClient` as a regular client: `set`, `get`, `hmset`, etc.
 
 ## Instantiation options
 
-- `RedisSingleClient` (required): The library `node_redis` that is used in your project.
-- `RedisCommands` (required): The commands of `node_redis` (It should be installed as dependency of `node_redis`).
+- `RedisSingleClient` (required): The library `node_redis` that is used in your project. You can try to use `require('redis')`.
+- `RedisCommands` (required): The commands of `node_redis` (It should be installed as dependency of `node_redis`). You can try to use `require('redis-commands')`.
 - Sentinel Connection Options (1 required):
     - `host` and `port`: Connect to a single sentinel
     - `sentinels`: Keep a list of all sentinels in the cluster so that if one disconnects, we rotate to another (Alternative to `port` and `host`): `sentinels: [[host1,port1],[host2,port2]]`
