@@ -37,9 +37,23 @@ See related thread about different approaches to Sentinel support: https://githu
 
 `npm install redis-sentinel-client`
 
-```
-var RedisSentinel = require('redis-sentinel-client');
-var sentinelClient = RedisSentinel.createClient(options);
+```js
+const P = require('bluebird')
+const Redis = P.promisifyAll(require('redis'))
+
+const { customizeClientCreator } = require('redis-sentinel-client')
+const { createClient } = customizeClientCreator({
+  RedisSingleClient: Redis,
+  RedisCommands: require('redis-commands').list
+})
+const sentinelClient = createClient({
+  sentinels: [
+    ['127.0.0.1', '26379'],
+    ['127.0.0.1', '26380'],
+    ['127.0.0.1', '26381']
+  ],
+  masterName: 'mymaster'
+})
 ```
 
 Now use `sentinelClient` as a regular client: `set`, `get`, `hmset`, etc.
@@ -49,7 +63,7 @@ Now use `sentinelClient` as a regular client: `set`, `get`, `hmset`, etc.
 - `RedisSingleClient` (required): The library `node_redis` that is used in your project. You can try to use `require('redis')`.
 - `RedisCommands` (required): The commands of `node_redis` (It should be installed as dependency of `node_redis`). You can try to use `require('redis-commands')`.
 - Sentinel Connection Options (1 required):
-    - `host` and `port`: Connect to a single sentinel
+    <!-- - `host` and `port`: Connect to a single sentinel -->
     - `sentinels`: Keep a list of all sentinels in the cluster so that if one disconnects, we rotate to another (Alternative to `port` and `host`): `sentinels: [[host1,port1],[host2,port2]]`
 - `masterName`: Which master the sentinel is listening to. Defaults to 'mymaster'. (If a sentinel is listening to multiple masters, create multiple `SentinelClients`.)
 - `masterOptions`: The options object which will be passed on to the Redis master client connection. See the [node_redis](https://github.com/mranney/node_redis#rediscreateclientport-host-options) documentation for more details.
